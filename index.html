@@ -1,0 +1,835 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Earth Pulse — Schumann Resonance Generator</title>
+  <style>
+    :root {
+      --bg: #020208;
+      --surface: rgba(8, 14, 38, 0.72);
+      --border: rgba(60, 100, 200, 0.22);
+      --text: #c8d8f8;
+      --dim: #3a5080;
+      --accent: #4af0c8;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    html, body {
+      width: 100%; height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      overflow: hidden;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    #mainCanvas {
+      position: fixed; inset: 0;
+      width: 100%; height: 100%;
+      z-index: 0;
+    }
+
+    /* ── Layout shell ── */
+    .ui {
+      position: fixed; inset: 0; z-index: 10;
+      display: flex; flex-direction: column;
+      align-items: center;
+      padding: 0 12px 12px;
+      pointer-events: none;
+    }
+
+    /* ── Header ── */
+    .header {
+      padding: 22px 0 0;
+      text-align: center;
+    }
+    .title {
+      font-size: clamp(18px, 3.5vw, 30px);
+      font-weight: 200;
+      letter-spacing: .35em;
+      text-transform: uppercase;
+      color: #8ab4ff;
+      text-shadow: 0 0 32px rgba(100,160,255,.55);
+    }
+    .subtitle {
+      font-size: 10px;
+      letter-spacing: .2em;
+      color: var(--dim);
+      margin-top: 4px;
+    }
+
+    /* ── Play button (absolute center) ── */
+    .play-wrap {
+      position: fixed;
+      top: 50%; left: 50%;
+      transform: translate(-50%, -50%) translateY(-90px);
+      pointer-events: auto;
+      z-index: 20;
+    }
+    .play-btn {
+      width: 82px; height: 82px;
+      border-radius: 50%;
+      border: 1.5px solid rgba(74,240,200,.35);
+      background: rgba(10,20,50,.6);
+      backdrop-filter: blur(12px);
+      cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 26px; color: var(--accent);
+      box-shadow: 0 0 30px rgba(74,240,200,.18), inset 0 0 18px rgba(74,240,200,.06);
+      transition: all .3s ease;
+    }
+    .play-btn:hover {
+      border-color: rgba(74,240,200,.8);
+      box-shadow: 0 0 55px rgba(74,240,200,.45), inset 0 0 28px rgba(74,240,200,.12);
+      transform: scale(1.06);
+    }
+    .play-btn.playing {
+      background: rgba(74,240,200,.1);
+      border-color: #4af0c8;
+      box-shadow: 0 0 65px rgba(74,240,200,.5), inset 0 0 28px rgba(74,240,200,.15);
+    }
+
+    /* ── Bottom stack ── */
+    .bottom {
+      margin-top: auto;
+      width: 100%; max-width: 520px;
+      display: flex; flex-direction: column; align-items: center;
+      gap: 10px;
+      pointer-events: auto;
+    }
+
+    /* ── Frequency buttons ── */
+    .freq-grid {
+      display: flex; gap: 8px; flex-wrap: wrap; justify-content: center;
+    }
+    .freq-btn {
+      display: flex; flex-direction: column; align-items: center; gap: 3px;
+      padding: 9px 13px;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      backdrop-filter: blur(14px);
+      cursor: pointer;
+      transition: all .25s ease;
+      min-width: 68px; min-height: 72px;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .freq-btn .dot {
+      width: 7px; height: 7px; border-radius: 50%;
+      background: currentColor; opacity: .3;
+      transition: all .25s;
+    }
+    .freq-btn .hz  { font-size: 15px; font-weight: 600; color: #fff; }
+    .freq-btn .lbl { font-size: 9px; letter-spacing: .1em; color: var(--dim); }
+    .freq-btn.active { border-color: currentColor; box-shadow: 0 0 18px currentColor; }
+    .freq-btn.active .dot { opacity: 1; box-shadow: 0 0 7px currentColor; }
+
+    /* ── Control panel ── */
+    .panel {
+      width: 100%;
+      background: var(--surface);
+      backdrop-filter: blur(22px);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 14px 18px;
+      display: flex; flex-direction: column; gap: 12px;
+    }
+
+    .row {
+      display: flex; align-items: center; gap: 10px;
+    }
+    .lbl {
+      font-size: 10px; letter-spacing: .12em; color: var(--dim);
+      min-width: 54px;
+      text-transform: uppercase;
+    }
+    .val {
+      font-size: 11px; color: var(--accent);
+      min-width: 52px; text-align: right;
+    }
+
+    /* Mode toggle */
+    .mode-toggle {
+      display: flex;
+      background: rgba(0,0,0,.35);
+      border-radius: 8px; padding: 2px; gap: 2px;
+    }
+    .mode-btn {
+      padding: 5px 13px; border-radius: 6px;
+      border: none; background: transparent;
+      color: var(--dim); font-size: 10px; letter-spacing: .1em;
+      cursor: pointer; transition: all .2s;
+      text-transform: uppercase;
+    }
+    .mode-btn.active { background: rgba(74,240,200,.15); color: var(--accent); }
+
+    /* Sliders */
+    input[type=range] {
+      flex: 1; -webkit-appearance: none; appearance: none;
+      height: 3px;
+      background: linear-gradient(to right, var(--accent) var(--pct,50%), rgba(80,120,200,.25) var(--pct,50%));
+      border-radius: 2px; outline: none; cursor: pointer;
+    }
+    input[type=range]::-webkit-slider-thumb {
+      -webkit-appearance: none; width: 16px; height: 16px;
+      border-radius: 50%; background: var(--accent);
+      box-shadow: 0 0 10px rgba(74,240,200,.5); cursor: pointer;
+    }
+    input[type=range]::-moz-range-thumb {
+      width: 16px; height: 16px; border-radius: 50%;
+      background: var(--accent); border: none; cursor: pointer;
+    }
+
+    /* Waveform visualizer */
+    .viz { width: 100%; height: 36px; border-radius: 8px; overflow: hidden; }
+    #vizCanvas { width: 100%; height: 100%; display: block; }
+
+    /* Timer */
+    .timer-row {
+      display: flex; align-items: center; gap: 10px;
+    }
+    .timer-display {
+      font-size: 20px; font-weight: 200; letter-spacing: .12em;
+      color: #8ab4ff; min-width: 60px; font-variant-numeric: tabular-nums;
+    }
+    .timer-btns { display: flex; gap: 5px; flex-wrap: wrap; }
+    .t-btn {
+      padding: 4px 9px; border: 1px solid var(--border); border-radius: 6px;
+      background: transparent; color: var(--dim); font-size: 10px;
+      cursor: pointer; transition: all .2s;
+    }
+    .t-btn:hover, .t-btn.active { border-color: rgba(74,240,200,.5); color: var(--accent); }
+
+    .note {
+      text-align: center; font-size: 9.5px;
+      color: rgba(58, 80, 128, .8); letter-spacing: .05em;
+    }
+  </style>
+</head>
+<body>
+
+<canvas id="mainCanvas"></canvas>
+
+<div class="ui">
+  <div class="header">
+    <div class="title">Earth Pulse</div>
+    <div class="subtitle">Schumann Resonance Generator</div>
+  </div>
+
+  <div class="bottom">
+    <div class="freq-grid" id="freqGrid"></div>
+
+    <div class="panel">
+      <!-- Mode -->
+      <div class="row">
+        <span class="lbl">Mode</span>
+        <div class="mode-toggle">
+          <button class="mode-btn active" data-mode="binaural">Binaural</button>
+          <button class="mode-btn" data-mode="isochronic">Isochronic</button>
+        </div>
+      </div>
+
+      <!-- Volume -->
+      <div class="row">
+        <span class="lbl">Volume</span>
+        <input type="range" id="volSlider" min="0" max="100" value="65">
+        <span class="val" id="volVal">65%</span>
+      </div>
+
+      <!-- Carrier frequency -->
+      <div class="row">
+        <span class="lbl">Carrier</span>
+        <input type="range" id="carrierSlider" min="80" max="500" value="200" step="5">
+        <span class="val" id="carrierVal">200 Hz</span>
+      </div>
+
+      <!-- Waveform -->
+      <div class="viz"><canvas id="vizCanvas"></canvas></div>
+
+      <!-- Timer -->
+      <div class="timer-row">
+        <span class="lbl">Timer</span>
+        <div class="timer-display" id="timerDisplay">00:00</div>
+        <div class="timer-btns">
+          <button class="t-btn active" data-min="0">Off</button>
+          <button class="t-btn" data-min="10">10m</button>
+          <button class="t-btn" data-min="20">20m</button>
+          <button class="t-btn" data-min="30">30m</button>
+          <button class="t-btn" data-min="60">60m</button>
+        </div>
+      </div>
+
+      <div class="note" id="note">Use headphones for binaural beats · For relaxation &amp; meditation</div>
+    </div>
+  </div>
+</div>
+
+<!-- Centered play button -->
+<div class="play-wrap">
+  <button class="play-btn" id="playBtn" title="Play / Pause">&#9654;</button>
+</div>
+
+<script>
+'use strict';
+
+/* ─────────────────────────────────────────
+   Schumann Resonances
+───────────────────────────────────────── */
+const FREQS = [
+  { hz: 7.83,  name: 'Earth', harmonic: 'F1', color: '#00ff9d' },
+  { hz: 14.3,  name: 'Sky',   harmonic: 'F2', color: '#00d4ff' },
+  { hz: 20.8,  name: 'Aura',  harmonic: 'F3', color: '#9b7fff' },
+  { hz: 27.3,  name: 'Field', harmonic: 'F4', color: '#ff7070' },
+  { hz: 33.8,  name: 'Crown', harmonic: 'F5', color: '#ffde59' },
+];
+
+/* ─────────────────────────────────────────
+   Audio Engine
+───────────────────────────────────────── */
+class AudioEngine {
+  constructor() {
+    this.ctx       = null;
+    this.master    = null;
+    this.analyser  = null;
+    this.nodes     = new Map(); // hz → node group
+    this.mode      = 'binaural';
+    this.carrier   = 200;
+    this.vol       = 0.65;
+    this.playing   = false;
+    this.active    = new Set();
+  }
+
+  async _boot() {
+    if (this.ctx) {
+      if (this.ctx.state === 'suspended') await this.ctx.resume();
+      return;
+    }
+    this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+    this.master = this.ctx.createGain();
+    this.master.gain.value = this.vol;
+    this.analyser = this.ctx.createAnalyser();
+    this.analyser.fftSize = 512;
+    this.master.connect(this.analyser);
+    this.analyser.connect(this.ctx.destination);
+  }
+
+  _addBinaural(hz) {
+    const { ctx } = this;
+    const merger = ctx.createChannelMerger(2);
+    const out    = ctx.createGain();
+    out.gain.value = 0.22;
+
+    const L = ctx.createOscillator();
+    const R = ctx.createOscillator();
+    const gL = ctx.createGain(); gL.gain.value = 1;
+    const gR = ctx.createGain(); gR.gain.value = 1;
+
+    L.type = R.type = 'sine';
+    L.frequency.value = this.carrier;
+    R.frequency.value = this.carrier + hz;
+
+    L.connect(gL); gL.connect(merger, 0, 0);
+    R.connect(gR); gR.connect(merger, 0, 1);
+    merger.connect(out);
+    out.connect(this.master);
+
+    L.start(); R.start();
+    this.nodes.set(hz, { type: 'binaural', L, R, out });
+  }
+
+  _addIsochronic(hz) {
+    const { ctx } = this;
+    const carrier = ctx.createOscillator();
+    const lfo     = ctx.createOscillator();
+    const lfoGain = ctx.createGain();
+    const out     = ctx.createGain();
+
+    carrier.type = 'sine';
+    carrier.frequency.value = this.carrier;
+
+    lfo.type = 'sine';
+    lfo.frequency.value = hz;
+
+    // gain oscillates 0 → 1 via lfo
+    out.gain.value    = 0.22;
+    lfoGain.gain.value = 0.22;
+
+    lfo.connect(lfoGain);
+    lfoGain.connect(out.gain);
+    carrier.connect(out);
+    out.connect(this.master);
+
+    carrier.start(); lfo.start();
+    this.nodes.set(hz, { type: 'iso', carrier, lfo, out });
+  }
+
+  _fadeOut(hz, cb) {
+    const n = this.nodes.get(hz);
+    if (!n) { if (cb) cb(); return; }
+    const t = this.ctx.currentTime;
+    n.out.gain.setTargetAtTime(0, t, 0.08);
+    setTimeout(() => {
+      try {
+        if (n.type === 'binaural') { n.L.stop(); n.R.stop(); }
+        else { n.carrier.stop(); n.lfo.stop(); }
+      } catch(_) {}
+      this.nodes.delete(hz);
+      if (cb) cb();
+    }, 400);
+  }
+
+  addTone(hz) {
+    if (!this.ctx || this.nodes.has(hz)) return;
+    this.mode === 'binaural' ? this._addBinaural(hz) : this._addIsochronic(hz);
+    this.active.add(hz);
+  }
+
+  removeTone(hz) {
+    this._fadeOut(hz);
+    this.active.delete(hz);
+  }
+
+  setMode(m) {
+    this.mode = m;
+    if (!this.playing) return;
+    const prev = [...this.active];
+    prev.forEach(hz => this._fadeOut(hz));
+    setTimeout(() => prev.forEach(hz => this.addTone(hz)), 500);
+  }
+
+  setVolume(v) {
+    this.vol = v;
+    if (this.master) this.master.gain.setTargetAtTime(v, this.ctx.currentTime, 0.05);
+  }
+
+  setCarrier(hz) {
+    this.carrier = hz;
+    if (this.playing) {
+      const prev = [...this.active];
+      prev.forEach(h => this._fadeOut(h));
+      setTimeout(() => prev.forEach(h => this.addTone(h)), 500);
+    }
+  }
+
+  async start(hzList) {
+    await this._boot();
+    hzList.forEach(hz => this.addTone(hz));
+    this.playing = true;
+  }
+
+  stop() {
+    [...this.active].forEach(hz => this._fadeOut(hz));
+    this.active.clear();
+    this.playing = false;
+  }
+
+  getWaveform() {
+    if (!this.analyser) return null;
+    const d = new Uint8Array(this.analyser.frequencyBinCount);
+    this.analyser.getByteTimeDomainData(d);
+    return d;
+  }
+
+  now() { return this.ctx ? this.ctx.currentTime : performance.now() / 1000; }
+}
+
+/* ─────────────────────────────────────────
+   Mandala Canvas Renderer
+───────────────────────────────────────── */
+class MandalaRenderer {
+  constructor(canvas) {
+    this.c      = canvas;
+    this.g      = canvas.getContext('2d');
+    this.W = this.H = this.cx = this.cy = 0;
+    this.stars  = [];
+    this.t      = 0;
+    this.active = []; // list of hz values
+    this.playing = false;
+    this.getAudioTime = () => 0;
+    this._resize();
+    this._initStars();
+    this._loop();
+    window.addEventListener('resize', () => { this._resize(); this._initStars(); });
+  }
+
+  _resize() {
+    const dpr = devicePixelRatio || 1;
+    this.W = innerWidth; this.H = innerHeight;
+    this.c.width  = this.W * dpr;
+    this.c.height = this.H * dpr;
+    this.c.style.width  = this.W + 'px';
+    this.c.style.height = this.H + 'px';
+    this.g.scale(dpr, dpr);
+    this.cx = this.W / 2;
+    this.cy = this.H / 2;
+  }
+
+  _initStars() {
+    this.stars = Array.from({ length: 220 }, () => ({
+      x: Math.random() * this.W,
+      y: Math.random() * this.H,
+      r: Math.random() * 1.4 + 0.2,
+      a: Math.random() * 0.55 + 0.05,
+      p: Math.random() * Math.PI * 2,
+      s: Math.random() * 0.4 + 0.2,
+    }));
+  }
+
+  _drawStars(dt) {
+    const g = this.g;
+    this.stars.forEach(s => {
+      s.p += dt * s.s;
+      const a = s.a * (0.65 + 0.35 * Math.sin(s.p));
+      g.beginPath();
+      g.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+      g.fillStyle = `rgba(200,218,255,${a})`;
+      g.fill();
+    });
+  }
+
+  _drawOrb(t) {
+    const g = this.g, cx = this.cx, cy = this.cy;
+    const R = Math.min(this.W, this.H) * 0.09;
+
+    // Atmosphere pulse (synced to 7.83 Hz)
+    const pulse = this.playing
+      ? (Math.sin(t * Math.PI * 2 * 7.83) * 0.5 + 0.5)
+      : 0;
+
+    const atmo = g.createRadialGradient(cx, cy, 0, cx, cy, R * 5.5);
+    atmo.addColorStop(0,   `rgba(0,210,140,${0.06 + pulse * 0.06})`);
+    atmo.addColorStop(0.4, `rgba(0,100,220,${0.05 + pulse * 0.04})`);
+    atmo.addColorStop(1,   'rgba(0,0,0,0)');
+    g.beginPath(); g.arc(cx, cy, R * 5.5, 0, Math.PI * 2);
+    g.fillStyle = atmo; g.fill();
+
+    // Earth sphere
+    const grad = g.createRadialGradient(cx - R * .35, cy - R * .35, 0, cx, cy, R);
+    grad.addColorStop(0,   '#90ffe4');
+    grad.addColorStop(0.35,'#22c8a0');
+    grad.addColorStop(0.7, '#0888cc');
+    grad.addColorStop(1,   '#003668');
+    g.beginPath(); g.arc(cx, cy, R, 0, Math.PI * 2);
+    g.fillStyle = grad; g.fill();
+
+    // Specular highlight
+    const sh = g.createRadialGradient(cx - R * .45, cy - R * .45, 0, cx, cy, R);
+    sh.addColorStop(0,   'rgba(255,255,255,.32)');
+    sh.addColorStop(0.38,'rgba(255,255,255,.06)');
+    sh.addColorStop(1,   'rgba(255,255,255,0)');
+    g.beginPath(); g.arc(cx, cy, R, 0, Math.PI * 2);
+    g.fillStyle = sh; g.fill();
+  }
+
+  _drawMandala(t) {
+    const g = this.g, cx = this.cx, cy = this.cy;
+    const R = Math.min(this.W, this.H) * 0.09;
+
+    g.save();
+    g.translate(cx, cy);
+
+    for (let ring = 1; ring <= 4; ring++) {
+      const r     = R * (1.6 + ring * 0.9);
+      const petals = 6 * ring;
+      const rot   = t * (ring % 2 ? 0.04 : -0.04) * (1 / ring);
+      g.save();
+      g.rotate(rot);
+      for (let i = 0; i < petals; i++) {
+        const a = (i / petals) * Math.PI * 2;
+        const px = Math.cos(a) * r * 0.5;
+        const py = Math.sin(a) * r * 0.5;
+        g.beginPath();
+        g.arc(px, py, r * 0.5, 0, Math.PI * 2);
+        g.strokeStyle = `rgba(80,140,255,${0.025 + (ring === 1 ? .01 : 0)})`;
+        g.lineWidth = 0.6;
+        g.stroke();
+      }
+      g.restore();
+    }
+
+    g.restore();
+  }
+
+  _drawRings(t) {
+    const g = this.g, cx = this.cx, cy = this.cy;
+    const R = Math.min(this.W, this.H) * 0.09;
+
+    this.active.forEach((hz, idx) => {
+      const freq  = FREQS.find(f => f.hz === hz);
+      if (!freq) return;
+
+      const baseR = R * (2.6 + idx * 0.9);
+      const pulse = this.playing
+        ? (Math.sin(t * Math.PI * 2 * hz) * 0.5 + 0.5)
+        : (Math.sin(this.t * 0.5 + idx * 1.3) * 0.5 + 0.5);
+      const ringR = baseR + pulse * R * 0.28;
+
+      // Ring line
+      g.beginPath();
+      g.arc(cx, cy, ringR, 0, Math.PI * 2);
+      g.strokeStyle = freq.color + 'aa';
+      g.lineWidth   = 1.2 + pulse * 1.8;
+      g.shadowColor = freq.color;
+      g.shadowBlur  = 8 + pulse * 18;
+      g.stroke();
+      g.shadowBlur = 0;
+
+      // Orbiting dots
+      const dotCount = Math.max(8, Math.floor(hz * 1.5));
+      const rotSpeed = (0.018 + idx * 0.004) * (idx % 2 ? 1 : -1);
+      const rotOff   = this.t * rotSpeed;
+
+      g.save();
+      g.translate(cx, cy);
+      g.rotate(rotOff);
+      for (let i = 0; i < dotCount; i++) {
+        const a  = (i / dotCount) * Math.PI * 2;
+        const dp = this.playing
+          ? (Math.sin(t * Math.PI * 2 * hz + a * 2) * 0.5 + 0.5)
+          : 0.5;
+        const dx = Math.cos(a) * ringR;
+        const dy = Math.sin(a) * ringR;
+        g.beginPath();
+        g.arc(dx, dy, 1.2 + dp * 2, 0, Math.PI * 2);
+        g.fillStyle  = freq.color;
+        g.globalAlpha = 0.25 + dp * 0.7;
+        g.fill();
+        g.globalAlpha = 1;
+      }
+      g.restore();
+    });
+  }
+
+  _loop() {
+    let last = performance.now();
+    const frame = now => {
+      const dt = Math.min((now - last) / 1000, 0.05);
+      last = now;
+      this.t += dt;
+
+      const g = this.g;
+      g.clearRect(0, 0, this.W, this.H);
+
+      // BG
+      const bg = g.createRadialGradient(this.cx, this.cy, 0, this.cx, this.cy, Math.hypot(this.W, this.H) * .6);
+      bg.addColorStop(0, '#080816');
+      bg.addColorStop(1, '#010108');
+      g.fillStyle = bg;
+      g.fillRect(0, 0, this.W, this.H);
+
+      this._drawStars(dt);
+      const t = this.playing ? this.getAudioTime() : this.t;
+      this._drawMandala(t);
+      this._drawRings(t);
+      this._drawOrb(t);
+
+      requestAnimationFrame(frame);
+    };
+    requestAnimationFrame(frame);
+  }
+}
+
+/* ─────────────────────────────────────────
+   Waveform Visualizer
+───────────────────────────────────────── */
+class Visualizer {
+  constructor(canvas, getDataFn) {
+    this.canvas  = canvas;
+    this.ctx     = canvas.getContext('2d');
+    this.getData = getDataFn;
+    this._loop();
+  }
+  _loop() {
+    const draw = () => {
+      const c = this.canvas;
+      const g = this.ctx;
+      const W = c.parentElement.offsetWidth || 400;
+      const H = c.parentElement.offsetHeight || 36;
+      c.width = W; c.height = H;
+
+      g.clearRect(0, 0, W, H);
+
+      const data = this.getData();
+      g.beginPath();
+      if (!data) {
+        g.moveTo(0, H / 2); g.lineTo(W, H / 2);
+        g.strokeStyle = 'rgba(74,240,200,.18)';
+      } else {
+        const step = W / data.length;
+        data.forEach((v, i) => {
+          const y = ((v / 128) - 1) * (H / 2) + H / 2;
+          i === 0 ? g.moveTo(0, y) : g.lineTo(i * step, y);
+        });
+        g.strokeStyle = '#4af0c8';
+        g.shadowColor  = '#4af0c8';
+        g.shadowBlur   = 5;
+      }
+      g.lineWidth = 1.5;
+      g.stroke();
+      g.shadowBlur = 0;
+      requestAnimationFrame(draw);
+    };
+    requestAnimationFrame(draw);
+  }
+}
+
+/* ─────────────────────────────────────────
+   Timer
+───────────────────────────────────────── */
+class Timer {
+  constructor(el) {
+    this.el       = el;
+    this.elapsed  = 0;
+    this.duration = 0;
+    this._id      = null;
+    this.onEnd    = null;
+    this._render();
+  }
+  start(onEnd) {
+    this.onEnd = onEnd;
+    this._id = setInterval(() => {
+      this.elapsed++;
+      this._render();
+      if (this.duration > 0 && this.elapsed >= this.duration) {
+        this.stop();
+        this.onEnd?.();
+      }
+    }, 1000);
+  }
+  stop()  { clearInterval(this._id); this._id = null; this._render(); }
+  reset() { this.stop(); this.elapsed = 0; this._render(); }
+  setDuration(min) { this.duration = min * 60; this._render(); }
+  _render() {
+    const secs  = this.duration > 0 ? Math.max(0, this.duration - this.elapsed) : this.elapsed;
+    const m = String(Math.floor(secs / 60)).padStart(2, '0');
+    const s = String(secs % 60).padStart(2, '0');
+    this.el.textContent = `${m}:${s}`;
+  }
+}
+
+/* ─────────────────────────────────────────
+   App
+───────────────────────────────────────── */
+(function() {
+  const audio    = new AudioEngine();
+  const renderer = new MandalaRenderer(document.getElementById('mainCanvas'));
+  const timer    = new Timer(document.getElementById('timerDisplay'));
+  const vizCanvas = document.getElementById('vizCanvas');
+
+  new Visualizer(vizCanvas, () => audio.getWaveform());
+  renderer.getAudioTime = () => audio.now();
+
+  let isPlaying = false;
+  let activeHz  = new Set([7.83]); // default: Earth fundamental
+
+  /* ── Build frequency buttons ── */
+  const freqGrid = document.getElementById('freqGrid');
+  FREQS.forEach(f => {
+    const btn = document.createElement('button');
+    btn.className    = 'freq-btn';
+    btn.dataset.hz   = f.hz;
+    btn.style.color  = f.color;
+    btn.innerHTML = `
+      <div class="dot"></div>
+      <div class="hz">${f.hz}</div>
+      <div class="lbl">${f.name}</div>
+      <div class="lbl">${f.harmonic}</div>`;
+    btn.addEventListener('click', () => {
+      if (activeHz.has(f.hz)) {
+        if (activeHz.size === 1) return;
+        activeHz.delete(f.hz);
+        if (isPlaying) audio.removeTone(f.hz);
+      } else {
+        activeHz.add(f.hz);
+        if (isPlaying) audio.addTone(f.hz);
+      }
+      syncButtons();
+      renderer.active = [...activeHz];
+    });
+    freqGrid.appendChild(btn);
+  });
+
+  function syncButtons() {
+    document.querySelectorAll('.freq-btn').forEach(btn => {
+      btn.classList.toggle('active', activeHz.has(+btn.dataset.hz));
+    });
+  }
+  syncButtons();
+  renderer.active = [...activeHz];
+
+  /* ── Play / Stop ── */
+  const playBtn = document.getElementById('playBtn');
+  playBtn.addEventListener('click', async () => {
+    if (isPlaying) {
+      audio.stop();
+      timer.stop();
+      isPlaying = false;
+      renderer.playing = false;
+      playBtn.innerHTML = '&#9654;';
+      playBtn.classList.remove('playing');
+    } else {
+      await audio.start([...activeHz]);
+      timer.start(() => {
+        if (isPlaying) playBtn.click();
+      });
+      isPlaying = true;
+      renderer.playing = true;
+      playBtn.innerHTML = '&#9646;&#9646;';
+      playBtn.classList.add('playing');
+    }
+  });
+
+  /* ── Mode ── */
+  document.querySelectorAll('.mode-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      audio.setMode(btn.dataset.mode);
+      document.getElementById('note').textContent =
+        btn.dataset.mode === 'binaural'
+          ? 'Use headphones for binaural beats · For relaxation & meditation'
+          : 'Isochronic tones work with speakers · For relaxation & meditation';
+    });
+  });
+
+  /* ── Volume ── */
+  const volSlider = document.getElementById('volSlider');
+  const volVal    = document.getElementById('volVal');
+  function syncSlider(el) {
+    const pct = ((el.value - el.min) / (el.max - el.min) * 100).toFixed(1);
+    el.style.setProperty('--pct', pct + '%');
+  }
+  volSlider.addEventListener('input', () => {
+    const v = volSlider.value / 100;
+    volVal.textContent = `${volSlider.value}%`;
+    audio.setVolume(v);
+    syncSlider(volSlider);
+  });
+  syncSlider(volSlider);
+
+  /* ── Carrier ── */
+  const carrierSlider = document.getElementById('carrierSlider');
+  const carrierVal    = document.getElementById('carrierVal');
+  carrierSlider.addEventListener('input', () => {
+    const hz = +carrierSlider.value;
+    carrierVal.textContent = `${hz} Hz`;
+    audio.setCarrier(hz);
+    syncSlider(carrierSlider);
+  });
+  syncSlider(carrierSlider);
+
+  /* ── Timer buttons ── */
+  document.querySelectorAll('.t-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.t-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      const min = +btn.dataset.min;
+      timer.reset();
+      timer.setDuration(min);
+    });
+  });
+})();
+</script>
+</body>
+</html>
