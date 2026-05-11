@@ -181,6 +181,20 @@
       background: var(--accent); border: none; cursor: pointer;
     }
 
+    /* Carrier number input */
+    .carrier-input-wrap { display: flex; align-items: center; gap: 2px; }
+    #carrierInput {
+      width: 46px; background: transparent; border: none;
+      border-bottom: 1px solid rgba(74,240,200,.35);
+      color: var(--accent); font-size: 11px; text-align: right;
+      outline: none; padding: 1px 2px;
+      -moz-appearance: textfield;
+    }
+    #carrierInput::-webkit-inner-spin-button,
+    #carrierInput::-webkit-outer-spin-button { -webkit-appearance: none; }
+    #carrierInput:focus { border-bottom-color: var(--accent); }
+    .carrier-unit { font-size: 10px; color: var(--accent); }
+
     /* Waveform visualizer */
     .viz { width: 100%; height: 36px; border-radius: 8px; overflow: hidden; }
     #vizCanvas { width: 100%; height: 100%; display: block; }
@@ -280,7 +294,10 @@
       <div class="row">
         <span class="lbl">Carrier</span>
         <input type="range" id="carrierSlider" min="5" max="600" value="200" step="1">
-        <span class="val" id="carrierVal">200 Hz</span>
+        <div class="carrier-input-wrap">
+          <input type="number" id="carrierInput" min="5" max="600" value="200">
+          <span class="carrier-unit">Hz</span>
+        </div>
       </div>
 
       <!-- Waveform -->
@@ -904,14 +921,31 @@ class Timer {
 
   /* ── Carrier ── */
   const carrierSlider = document.getElementById('carrierSlider');
-  const carrierVal    = document.getElementById('carrierVal');
-  carrierSlider.addEventListener('input', () => {
-    const hz = +carrierSlider.value;
-    carrierVal.textContent = `${hz} Hz`;
+  const carrierInput  = document.getElementById('carrierInput');
+
+  function applyCarrier(hz) {
+    hz = Math.max(5, Math.min(600, hz));
+    carrierSlider.value = hz;
+    carrierInput.value  = hz;
     audio.setCarrier(hz);
     syncSlider(carrierSlider);
+  }
+
+  carrierSlider.addEventListener('input', () => applyCarrier(+carrierSlider.value));
+
+  carrierInput.addEventListener('input', () => {
+    const hz = parseInt(carrierInput.value, 10);
+    if (!isNaN(hz)) applyCarrier(hz);
   });
-  syncSlider(carrierSlider);
+  carrierInput.addEventListener('blur', () => {
+    // Snap to valid range on blur in case user typed out-of-bounds
+    applyCarrier(parseInt(carrierInput.value, 10) || 200);
+  });
+  carrierInput.addEventListener('keydown', e => {
+    if (e.key === 'Enter') carrierInput.blur();
+  });
+
+  applyCarrier(200);
 
   /* ── Timer buttons ── */
   document.querySelectorAll('.t-btn').forEach(btn => {
