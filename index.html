@@ -218,6 +218,23 @@
     }
     .help-btn:hover { border-color: var(--accent); color: var(--accent); box-shadow: 0 0 14px rgba(74,240,200,.3); }
 
+    /* ── Donate button ── */
+    .donate-btn {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 7px 16px; border-radius: 20px;
+      border: 1px solid rgba(255,180,0,.35);
+      background: rgba(255,160,0,.08); backdrop-filter: blur(12px);
+      color: #ffc84a; font-size: 10px; letter-spacing: .1em;
+      text-transform: uppercase; text-decoration: none;
+      cursor: pointer; transition: all .25s;
+      pointer-events: auto;
+    }
+    .donate-btn:hover {
+      border-color: rgba(255,180,0,.8); color: #ffd970;
+      box-shadow: 0 0 18px rgba(255,180,0,.3);
+    }
+    .donate-btn svg { width: 13px; height: 13px; fill: currentColor; flex-shrink: 0; }
+
     /* ── Footer ── */
     .footer {
       font-size: 9px; letter-spacing: .06em;
@@ -285,6 +302,11 @@
       <div class="note" id="note">Use headphones for binaural beats · For relaxation &amp; meditation</div>
     </div>
 
+    <a class="donate-btn" href="https://www.paypal.com/donate/?business=mudspit%40gmail.com&currency_code=USD" target="_blank" rel="noopener">
+      <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M7.076 21.337H2.47a.641.641 0 0 1-.633-.74L4.944.901C5.026.382 5.474 0 5.998 0h7.46c2.57 0 4.578.543 5.69 1.81 1.01 1.15 1.304 2.42 1.012 4.287-.023.143-.047.288-.077.437-.983 5.05-4.349 6.797-8.647 6.797h-2.19c-.524 0-.968.382-1.05.9l-1.12 7.106zm14.146-14.42a3.35 3.35 0 0 0-.607-.541c-.013.076-.026.175-.041.254-.93 4.778-4.005 7.201-9.138 7.201h-2.19a.563.563 0 0 0-.556.479l-1.187 7.527h-.506l-.24 1.516a.56.56 0 0 0 .554.647h3.882c.46 0 .85-.334.922-.788.06-.26.76-4.852.816-5.09a.932.932 0 0 1 .923-.788h.58c3.76 0 6.705-1.528 7.565-5.946.36-1.847.174-3.388-.777-4.471z"/></svg>
+      Support this project
+    </a>
+
     <div class="footer">
       Inspired By Quantum Schumann Resonance &nbsp;·&nbsp;
       Created By <a href="https://artxtreme.biz" target="_blank">Sherwin (mudspit) Martin of Artxtreme.biz</a>
@@ -339,9 +361,25 @@ class AudioEngine {
       this.analyser.fftSize = 512;
       this.master.connect(this.analyser);
       this.analyser.connect(this.ctx.destination);
+
+      // iOS requires playing a silent buffer in the same gesture to truly unlock audio
+      const buf = this.ctx.createBuffer(1, 1, 22050);
+      const src = this.ctx.createBufferSource();
+      src.buffer = buf;
+      src.connect(this.ctx.destination);
+      src.start(0);
     }
-    // Must call resume() synchronously within the user gesture on iOS
-    if (this.ctx.state === 'suspended') this.ctx.resume();
+    this.ctx.resume();
+  }
+
+  pause() {
+    if (this.ctx) this.ctx.suspend();
+    this.playing = false;
+  }
+
+  resumeCtx() {
+    if (this.ctx) this.ctx.resume();
+    this.playing = true;
   }
 
   _addBinaural(hz) {
@@ -788,18 +826,24 @@ class Timer {
   syncButtons();
   renderer.active = [...activeHz];
 
-  /* ── Play / Stop ── */
+  /* ── Play / Pause ── */
   const playBtn = document.getElementById('playBtn');
   playBtn.addEventListener('click', () => {
     if (isPlaying) {
-      audio.stop();
+      audio.pause();
       timer.stop();
       isPlaying = false;
       renderer.playing = false;
       playBtn.innerHTML = '&#9654;';
       playBtn.classList.remove('playing');
     } else {
-      audio.start([...activeHz]);
+      if (audio.ctx) {
+        // Already initialised — just resume the suspended context
+        audio.resumeCtx();
+      } else {
+        // First play — create context, unlock iOS, start oscillators
+        audio.start([...activeHz]);
+      }
       timer.start(() => {
         if (isPlaying) playBtn.click();
       });
