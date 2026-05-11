@@ -300,6 +300,7 @@
       </div>
 
       <div class="note" id="note">Use headphones for binaural beats · For relaxation &amp; meditation</div>
+      <div class="note" style="margin-top:3px;color:rgba(255,160,80,.55);">&#128276; iPhone: check your silent/mute switch is OFF</div>
     </div>
 
     <a class="donate-btn" href="https://www.paypal.com/donate/?business=mudspit%40gmail.com&currency_code=USD" target="_blank" rel="noopener">
@@ -352,7 +353,7 @@ class AudioEngine {
     this.active    = new Set();
   }
 
-  _boot() {
+  _boot(onRunning) {
     if (!this.ctx) {
       this.ctx = new (window.AudioContext || window.webkitAudioContext)();
       this.master = this.ctx.createGain();
@@ -360,16 +361,25 @@ class AudioEngine {
       this.analyser = this.ctx.createAnalyser();
       this.analyser.fftSize = 512;
       this.master.connect(this.analyser);
-      this.analyser.connect(this.ctx.destination);
 
-      // iOS requires playing a silent buffer in the same gesture to truly unlock audio
-      const buf = this.ctx.createBuffer(1, 1, 22050);
-      const src = this.ctx.createBufferSource();
-      src.buffer = buf;
-      src.connect(this.ctx.destination);
-      src.start(0);
+      // Route through MediaStreamDestination → <audio> element.
+      // This categorises output as "media" on iOS, bypassing the ringer/silent switch.
+      // Direct ctx.destination is "ambient" and gets muted by the silent switch.
+      try {
+        const msDest = this.ctx.createMediaStreamDestination();
+        this.analyser.connect(msDest);
+        this._audioEl = new Audio();
+        this._audioEl.srcObject = msDest.stream;
+        this._audioEl.play().catch(() => {});
+      } catch (_) {
+        // Fallback for browsers that lack createMediaStreamDestination
+        this.analyser.connect(this.ctx.destination);
+      }
     }
-    this.ctx.resume();
+
+    // Wait for the context to be truly running before calling back —
+    // oscillators started in a suspended context can silently drop on some iOS versions.
+    this.ctx.resume().then(() => { if (onRunning) onRunning(); });
   }
 
   pause() {
@@ -377,29 +387,31 @@ class AudioEngine {
     this.playing = false;
   }
 
-  resumeCtx() {
-    if (this.ctx) this.ctx.resume();
+  resumeCtx(onRunning) {
+    if (!this.ctx) return;
+    this.ctx.resume().then(() => { if (onRunning) onRunning(); });
     this.playing = true;
   }
 
   _addBinaural(hz) {
     const { ctx } = this;
-    const merger = ctx.createChannelMerger(2);
-    const out    = ctx.createGain();
+    const out = ctx.createGain();
     out.gain.value = 0.22;
 
     const L = ctx.createOscillator();
     const R = ctx.createOscillator();
-    const gL = ctx.createGain(); gL.gain.value = 1;
-    const gR = ctx.createGain(); gR.gain.value = 1;
+
+    // StereoPannerNode is far more reliable than ChannelMerger on iOS Safari
+    const panL = ctx.createStereoPanner ? ctx.createStereoPanner() : ctx.createPanner();
+    const panR = ctx.createStereoPanner ? ctx.createStereoPanner() : ctx.createPanner();
+    if (panL.pan) { panL.pan.value = -1; panR.pan.value = 1; }
 
     L.type = R.type = 'sine';
     L.frequency.value = this.carrier;
     R.frequency.value = this.carrier + hz;
 
-    L.connect(gL); gL.connect(merger, 0, 0);
-    R.connect(gR); gR.connect(merger, 0, 1);
-    merger.connect(out);
+    L.connect(panL); panL.connect(out);
+    R.connect(panR); panR.connect(out);
     out.connect(this.master);
 
     L.start(); R.start();
@@ -480,10 +492,12 @@ class AudioEngine {
     }
   }
 
-  start(hzList) {
-    this._boot();
-    hzList.forEach(hz => this.addTone(hz));
-    this.playing = true;
+  start(hzList, onReady) {
+    this._boot(() => {
+      hzList.forEach(hz => this.addTone(hz));
+      this.playing = true;
+      if (onReady) onReady();
+    });
   }
 
   stop() {
@@ -828,29 +842,35 @@ class Timer {
 
   /* ── Play / Pause ── */
   const playBtn = document.getElementById('playBtn');
+
+  function setPlaying(val) {
+    isPlaying = val;
+    renderer.playing = val;
+    playBtn.innerHTML = val ? '&#9646;&#9646;' : '&#9654;';
+    playBtn.classList.toggle('playing', val);
+  }
+
   playBtn.addEventListener('click', () => {
     if (isPlaying) {
       audio.pause();
       timer.stop();
-      isPlaying = false;
-      renderer.playing = false;
-      playBtn.innerHTML = '&#9654;';
-      playBtn.classList.remove('playing');
+      setPlaying(false);
     } else {
+      // Show playing state immediately so button feels responsive
+      setPlaying(true);
+
       if (audio.ctx) {
-        // Already initialised — just resume the suspended context
-        audio.resumeCtx();
+        // Context exists — resume it; oscillators are already running in the graph
+        audio.resumeCtx(() => {
+          // Ensure tones are in the graph (may have been added while paused)
+          [...activeHz].forEach(hz => audio.addTone(hz));
+        });
       } else {
-        // First play — create context, unlock iOS, start oscillators
-        audio.start([...activeHz]);
+        // First play: create context, unlock iOS silent switch, then start tones
+        audio.start([...activeHz], null);
       }
-      timer.start(() => {
-        if (isPlaying) playBtn.click();
-      });
-      isPlaying = true;
-      renderer.playing = true;
-      playBtn.innerHTML = '&#9646;&#9646;';
-      playBtn.classList.add('playing');
+
+      timer.start(() => { if (isPlaying) playBtn.click(); });
     }
   });
 
