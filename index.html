@@ -262,7 +262,7 @@
       <!-- Carrier frequency -->
       <div class="row">
         <span class="lbl">Carrier</span>
-        <input type="range" id="carrierSlider" min="80" max="500" value="200" step="5">
+        <input type="range" id="carrierSlider" min="80" max="500" value="200" step="1">
         <span class="val" id="carrierVal">200 Hz</span>
       </div>
 
@@ -330,18 +330,18 @@ class AudioEngine {
     this.active    = new Set();
   }
 
-  async _boot() {
-    if (this.ctx) {
-      if (this.ctx.state === 'suspended') await this.ctx.resume();
-      return;
+  _boot() {
+    if (!this.ctx) {
+      this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+      this.master = this.ctx.createGain();
+      this.master.gain.value = this.vol;
+      this.analyser = this.ctx.createAnalyser();
+      this.analyser.fftSize = 512;
+      this.master.connect(this.analyser);
+      this.analyser.connect(this.ctx.destination);
     }
-    this.ctx = new (window.AudioContext || window.webkitAudioContext)();
-    this.master = this.ctx.createGain();
-    this.master.gain.value = this.vol;
-    this.analyser = this.ctx.createAnalyser();
-    this.analyser.fftSize = 512;
-    this.master.connect(this.analyser);
-    this.analyser.connect(this.ctx.destination);
+    // Must call resume() synchronously within the user gesture on iOS
+    if (this.ctx.state === 'suspended') this.ctx.resume();
   }
 
   _addBinaural(hz) {
@@ -442,8 +442,8 @@ class AudioEngine {
     }
   }
 
-  async start(hzList) {
-    await this._boot();
+  start(hzList) {
+    this._boot();
     hzList.forEach(hz => this.addTone(hz));
     this.playing = true;
   }
@@ -790,7 +790,7 @@ class Timer {
 
   /* ── Play / Stop ── */
   const playBtn = document.getElementById('playBtn');
-  playBtn.addEventListener('click', async () => {
+  playBtn.addEventListener('click', () => {
     if (isPlaying) {
       audio.stop();
       timer.stop();
@@ -799,7 +799,7 @@ class Timer {
       playBtn.innerHTML = '&#9654;';
       playBtn.classList.remove('playing');
     } else {
-      await audio.start([...activeHz]);
+      audio.start([...activeHz]);
       timer.start(() => {
         if (isPlaying) playBtn.click();
       });
